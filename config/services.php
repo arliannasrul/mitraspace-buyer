@@ -45,6 +45,18 @@ return [
 
     /*
     |----------------------------------------------------------------------
+    | RajaOngkir Shipping API
+    |----------------------------------------------------------------------
+    */
+    'rajaongkir' => [
+        'api_key'     => env('RAJAONGKIR_API_KEY', ''),
+        'base_url'    => env('RAJAONGKIR_BASE_URL', 'https://rajaongkir.komerce.id/api/v1'),
+        'origin_city' => env('RAJAONGKIR_ORIGIN_CITY', 'Jakarta'),
+        'use_mock'    => env('RAJAONGKIR_USE_MOCK', true),
+    ],
+
+    /*
+    |----------------------------------------------------------------------
     | Third Party Services
     |----------------------------------------------------------------------
     */
