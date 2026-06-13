@@ -27,6 +27,8 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/checkout', [CheckoutController::class, 'index'])->name('checkout.index');
     Route::post('/checkout/shipping-rates', [CheckoutController::class, 'shippingRates'])->name('checkout.shipping-rates');
+    Route::post('/checkout/apply-voucher', [CheckoutController::class, 'applyVoucher'])->name('checkout.apply-voucher');
+    Route::post('/checkout/remove-voucher', [CheckoutController::class, 'removeVoucher'])->name('checkout.remove-voucher');
     Route::post('/checkout/pay', [CheckoutController::class, 'pay'])->name('checkout.pay');
     
     Route::get('/orders', [\App\Http\Controllers\OrderController::class, 'index'])->name('orders.index');

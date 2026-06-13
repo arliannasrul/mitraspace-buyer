@@ -22,7 +22,27 @@ class TrackingController extends Controller
         }
 
         $orderNumber = strtoupper(trim($orderNumber));
-        $result      = $this->sellerApi->trackOrder($orderNumber);
+        $queryNumber = $orderNumber;
+
+        // Map Invoice Number (starts with INV-) to the Seller Order Number (ORD-)
+        if (str_starts_with($orderNumber, 'INV-')) {
+            $log = \App\Models\PaymentLog::where('invoice_number', $orderNumber)->first();
+            if ($log) {
+                if ($log->seller_order_number) {
+                    $queryNumber = $log->seller_order_number;
+                } else {
+                    return view('tracking.index')
+                        ->with('error', 'Pesanan dengan invoice ini belum diteruskan ke penjual. Coba hubungi customer service atau tunggu beberapa saat.')
+                        ->with('searched', $orderNumber);
+                }
+            } else {
+                return view('tracking.index')
+                    ->with('error', 'Nomor invoice tidak ditemukan.')
+                    ->with('searched', $orderNumber);
+            }
+        }
+
+        $result = $this->sellerApi->trackOrder($queryNumber);
 
         if (!$result['success']) {
             return view('tracking.index')->with('error', $result['message'])->with('searched', $orderNumber);

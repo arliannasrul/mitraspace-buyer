@@ -159,6 +159,28 @@
                             <span class="value" id="display-ongkir" style="color:var(--color-text-3);">Belum dipilih</span>
                         </div>
 
+                        {{-- Voucher Code Section --}}
+                        <hr class="summary-divider" style="margin: 0.75rem 0;">
+                        <div class="voucher-section" style="padding: 2px 0;">
+                            <div class="form-group" style="margin-bottom: 8px;">
+                                <label class="form-label" style="font-size: 12px; margin-bottom: 6px; font-weight:600; display:block;">Punya Voucher Diskon?</label>
+                                <div style="display: flex; gap: 8px;" id="voucher-input-container">
+                                    <input type="text" class="form-control" id="voucher-code" placeholder="Masukkan kode voucher" style="font-size: 13px; height: 38px; padding: 6px 12px; text-transform: uppercase;">
+                                    <button type="button" class="btn btn-secondary" id="btn-apply-voucher" onclick="applyVoucher()" style="font-size: 13px; height: 38px; padding: 0 16px; font-weight:600;">Gunakan</button>
+                                </div>
+                                <div id="voucher-active-container" style="display:none; align-items:center; justify-content:space-between; background: rgba(108, 99, 255, 0.08); padding: 8px 12px; border-radius: 8px; border: 1px dashed var(--color-primary);">
+                                    <span style="font-size:13px; font-weight:bold; color:var(--color-primary);" id="active-voucher-label">CODE</span>
+                                    <button type="button" onclick="removeVoucher()" style="background:none; border:none; color:#dc3545; font-size:12px; font-weight:bold; cursor:pointer; padding:0 4px;">Hapus</button>
+                                </div>
+                                <div id="voucher-message" style="font-size: 12px; margin-top: 6px; font-weight: 500; display:none;"></div>
+                            </div>
+                        </div>
+
+                        <div class="summary-item" id="row-discount" style="display:none; color: var(--color-primary); font-weight: 600;">
+                            <span class="label">Diskon Voucher</span>
+                            <span class="value" id="display-discount">-Rp 0</span>
+                        </div>
+
                         <div class="summary-total">
                             <span class="label">Total Bayar</span>
                             <span class="value" id="display-total">Rp {{ number_format($subtotal, 0, ',', '.') }}</span>
@@ -191,6 +213,7 @@ const subtotal   = {{ (int)$subtotal }};
 const totalWeight = {{ (float)$totalWeight }};
 const csrfToken  = document.querySelector('meta[name="csrf-token"]').content;
 let selectedRate = null;
+let discountAmount = 0;
 
 async function checkOngkir() {
     const city = document.getElementById('city').value;
@@ -260,11 +283,110 @@ function selectRate(index, cost, courier, service) {
     // Update summary
     document.getElementById('display-ongkir').textContent = 'Rp ' + formatNum(cost);
     document.getElementById('display-ongkir').style.color = 'var(--color-text)';
-    document.getElementById('display-total').textContent = 'Rp ' + formatNum(subtotal + cost);
+    
+    // Update total bayar
+    updateTotalBayar(cost);
 
     // Enable pay button
     document.getElementById('btn-pay').disabled = false;
     selectedRate = { cost, courier, service };
+}
+
+function updateTotalBayar(shippingCost = 0) {
+    const total = Math.max(0, subtotal + shippingCost - discountAmount);
+    document.getElementById('display-total').textContent = 'Rp ' + formatNum(total);
+}
+
+async function applyVoucher() {
+    const codeInput = document.getElementById('voucher-code');
+    const code = codeInput.value.trim();
+    if (!code) {
+        alert('Masukkan kode voucher terlebih dahulu!');
+        codeInput.focus();
+        return;
+    }
+
+    const btn = document.getElementById('btn-apply-voucher');
+    const msgDiv = document.getElementById('voucher-message');
+    
+    btn.disabled = true;
+    btn.textContent = '...';
+    msgDiv.style.display = 'none';
+
+    try {
+        const res = await fetch('{{ route("checkout.apply-voucher") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
+            body: JSON.stringify({ code: code })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            discountAmount = parseInt(data.voucher.discount);
+            
+            // Show active voucher UI
+            document.getElementById('voucher-input-container').style.display = 'none';
+            document.getElementById('voucher-active-container').style.display = 'flex';
+            document.getElementById('active-voucher-label').textContent = data.voucher.code;
+            
+            // Update discount row
+            document.getElementById('row-discount').style.display = 'flex';
+            document.getElementById('display-discount').textContent = '-Rp ' + formatNum(discountAmount);
+            
+            // Display success message
+            msgDiv.style.display = 'block';
+            msgDiv.style.color = 'var(--color-primary)';
+            msgDiv.textContent = data.message;
+            
+            // Update total
+            const shippingCost = selectedRate ? selectedRate.cost : 0;
+            updateTotalBayar(shippingCost);
+        } else {
+            msgDiv.style.display = 'block';
+            msgDiv.style.color = '#dc3545';
+            msgDiv.textContent = data.message || 'Gagal menerapkan voucher.';
+        }
+    } catch (err) {
+        msgDiv.style.display = 'block';
+        msgDiv.style.color = '#dc3545';
+        msgDiv.textContent = 'Gagal memproses voucher. Coba lagi.';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Gunakan';
+    }
+}
+
+async function removeVoucher() {
+    const msgDiv = document.getElementById('voucher-message');
+    msgDiv.style.display = 'none';
+    
+    try {
+        const res = await fetch('{{ route("checkout.remove-voucher") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken }
+        });
+        
+        if (res.ok) {
+            discountAmount = 0;
+            
+            // Reset UI
+            document.getElementById('voucher-input-container').style.display = 'flex';
+            document.getElementById('voucher-active-container').style.display = 'none';
+            document.getElementById('voucher-code').value = '';
+            
+            document.getElementById('row-discount').style.display = 'none';
+            
+            msgDiv.style.display = 'block';
+            msgDiv.style.color = 'var(--color-text-2)';
+            msgDiv.textContent = 'Voucher dihapus.';
+            
+            // Update total
+            const shippingCost = selectedRate ? selectedRate.cost : 0;
+            updateTotalBayar(shippingCost);
+        }
+    } catch (err) {
+        alert('Gagal menghapus voucher.');
+    }
 }
 
 function formatNum(n) { return parseInt(n).toLocaleString('id-ID'); }
@@ -275,7 +397,10 @@ document.getElementById('city')?.addEventListener('change', () => {
     document.getElementById('btn-pay').disabled = true;
     document.getElementById('display-ongkir').textContent = 'Belum dipilih';
     document.getElementById('display-ongkir').style.color = 'var(--color-text-3)';
-    document.getElementById('display-total').textContent = 'Rp ' + formatNum(subtotal);
+    
+    const shippingCost = 0;
+    updateTotalBayar(shippingCost);
+    
     document.getElementById('shipping-rates-container').innerHTML = '<div style="text-align:center;padding:20px;color:var(--color-text-3);font-size:14px;">Klik "Cek Ongkir" untuk memperbarui tarif.</div>';
     selectedRate = null;
 });

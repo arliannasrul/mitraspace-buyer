@@ -22,11 +22,76 @@ class CheckoutController extends Controller
             return redirect()->route('catalog.index')->with('error', 'Keranjang belanja Anda kosong.');
         }
 
+        // Clear active voucher on entering checkout
+        session()->forget('applied_voucher');
+
         $subtotal    = array_sum(array_map(fn($i) => $i['price'] * $i['quantity'], $cart));
         $totalWeight = array_sum(array_map(fn($i) => $i['weight'] * $i['quantity'], $cart));
         $cities      = $this->shipping->getPopularCities();
 
         return view('checkout.index', compact('cart', 'subtotal', 'totalWeight', 'cities'));
+    }
+
+    /**
+     * AJAX endpoint: validasi dan gunakan kode voucher.
+     */
+    public function applyVoucher(Request $request)
+    {
+        $request->validate([
+            'code' => 'required|string',
+        ]);
+
+        $code = strtoupper(trim($request->input('code')));
+        $voucher = \App\Models\Voucher::where('code', $code)->first();
+
+        if (!$voucher) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Kode voucher tidak valid.',
+            ], 422);
+        }
+
+        $cart = session('cart', []);
+        $subtotal = array_sum(array_map(fn($i) => $i['price'] * $i['quantity'], $cart));
+
+        $errorMsg = '';
+        if (!$voucher->isValidFor($subtotal, $errorMsg)) {
+            return response()->json([
+                'success' => false,
+                'message' => $errorMsg,
+            ], 422);
+        }
+
+        $discount = $voucher->calculateDiscount($subtotal);
+        session(['applied_voucher' => [
+            'id' => $voucher->id,
+            'code' => $voucher->code,
+            'type' => $voucher->type,
+            'value' => $voucher->value,
+            'discount_amount' => $discount,
+        ]]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Voucher berhasil digunakan!',
+            'voucher' => [
+                'code' => $voucher->code,
+                'discount' => $discount,
+            ]
+        ]);
+    }
+
+    /**
+     * AJAX endpoint: hapus voucher dari session.
+     */
+    public function removeVoucher()
+    {
+        session()->forget('applied_voucher');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Voucher berhasil dihapus.',
+        ]);
     }
 
     /**
@@ -78,7 +143,22 @@ class CheckoutController extends Controller
 
         $subtotal     = array_sum(array_map(fn($i) => $i['price'] * $i['quantity'], $cart));
         $shippingCost = (int) $request->input('shipping_cost');
-        $totalAmount  = $subtotal + $shippingCost;
+        
+        // Hitung diskon voucher dari session
+        $discountAmount = 0;
+        $voucherCode = null;
+        $sessionVoucher = session('applied_voucher');
+        if ($sessionVoucher) {
+            $voucher = \App\Models\Voucher::find($sessionVoucher['id']);
+            if ($voucher && $voucher->isValidFor($subtotal)) {
+                $discountAmount = (int) $voucher->calculateDiscount($subtotal);
+                $voucherCode = $voucher->code;
+            } else {
+                session()->forget('applied_voucher');
+            }
+        }
+
+        $totalAmount  = max(0, $subtotal + $shippingCost - $discountAmount);
         $invoiceNumber = 'INV-' . strtoupper(Str::random(8)) . '-' . date('YmdHis');
 
         // Simpan data order ke session untuk dipakai setelah webhook
@@ -87,6 +167,8 @@ class CheckoutController extends Controller
             'amount'          => $totalAmount,
             'subtotal'        => $subtotal,
             'shipping_cost'   => $shippingCost,
+            'discount_amount' => $discountAmount,
+            'voucher_code'    => $voucherCode,
             'courier'         => $request->input('courier'),
             'courier_service' => $request->input('courier_service'),
             'customer_name'   => $request->input('recipient_name'),
