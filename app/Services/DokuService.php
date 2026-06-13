@@ -34,6 +34,25 @@ class DokuService
         $customerEmail   = $orderData['customer_email'] ?? 'customer@mitraspace.com';
         $customerPhone   = $orderData['customer_phone'] ?? '';
 
+        // Clean customer name: allow only alphanumeric and spaces
+        $customerName = preg_replace('/[^a-zA-Z0-9\s]/', '', $customerName);
+        $customerName = preg_replace('/\s+/', ' ', $customerName);
+        $customerName = trim($customerName);
+        if (empty($customerName)) {
+            $customerName = 'Customer';
+        }
+
+        // Clean customer phone: only digits, start with 62
+        $customerPhone = preg_replace('/[^0-9]/', '', $customerPhone);
+        if (str_starts_with($customerPhone, '0')) {
+            $customerPhone = '62' . substr($customerPhone, 1);
+        } elseif (!str_starts_with($customerPhone, '62') && !empty($customerPhone)) {
+            $customerPhone = '62' . $customerPhone;
+        }
+        if (strlen($customerPhone) < 10 || strlen($customerPhone) > 15) {
+            $customerPhone = '6281234567890';
+        }
+
         $requestId        = Str::uuid()->toString();
         $requestTimestamp = gmdate('Y-m-d\TH:i:s\Z');
 
